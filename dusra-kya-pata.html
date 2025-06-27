@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Excel Clone</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    canvas { display: block; border: 1px solid #ccc; }
+    #editor {
+      position: absolute;
+      display: none;
+      border: 1px solid #0078d4;
+      font: 14px Arial;
+    }
+    #stats {
+      position: fixed;
+      bottom: 5px;
+      left: 5px;
+      background: #f8f8f8;
+      font: 14px Arial;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+    }
+    #uploadJson {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+    }
+    #clearBtn {
+      position: fixed;
+      top: 10px;
+      left: 150px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <input type="file" id="uploadJson" accept="application/json">
+  <button id="clearBtn">Clear Data</button>
+  <canvas id="gridCanvas" width="1200" height="600"></canvas>
+  <input type="text" id="editor" />
+  <div id="stats"></div>
+  <script>
+    class Cell {
+      constructor(row, col, value = '') {
+        this.row = row;
+        this.col = col;
+        this.value = value;
+      }
+    }
+
+    class Selection {
+      constructor() {
+        this.startRow = null;
+        this.startCol = null;
+        this.endRow = null;
+        this.endCol = null;
+      }
+
+      start(row, col) {
+        this.startRow = this.endRow = row;
+        this.startCol = this.endCol = col;
+      }
+
+      update(row, col) {
+        this.endRow = row;
+        this.endCol = col;
+      }
+
+      isSelected(row, col) {
+        if (this.startRow === null || this.endRow === null) return false;
+        const minRow = Math.min(this.startRow, this.endRow);
+        const maxRow = Math.max(this.startRow, this.endRow);
+        const minCol = Math.min(this.startCol, this.endCol);
+        const maxCol = Math.max(this.startCol, this.endCol);
+        return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+      }
+
+      getSelectedRange() {
+        if (this.startRow === null || this.endRow === null) return null;
+        const minRow = Math.min(this.startRow, this.endRow);
+        const maxRow = Math.max(this.startRow, this.endRow);
+        const minCol = Math.min(this.startCol, this.endCol);
+        const maxCol = Math.max(this.startCol, this.endCol);
+        return { minRow, maxRow, minCol, maxCol };
+      }
+    }
+
+    class Grid {
+      constructor(canvas, editor, stats) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.editor = editor;
+        this.stats = stats;
+
+        this.rows = 100000;
+        this.cols = 500;
+        this.cellWidths = Array(this.cols).fill(100);
+        this.cellHeights = Array(this.rows).fill(24);
+        this.headerHeight = 24;
+        this.headerWidth = 50;
+
+        this.cells = new Map();
+        this.selection = new Selection();
+
+        this.offsetX = 0;
+        this.offsetY = 0;
+
+        this.bindEvents();
+        this.draw();
+      }
+
+      draw() {
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        let y = this.headerHeight;
+        for (let r = this.offsetY; y < this.canvas.height; r++) {
+          if (r >= this.rows) break;
+          let x = this.headerWidth;
+          for (let c = this.offsetX; x < this.canvas.width; c++) {
+            if (c >= this.cols) break;
+
+            const width = this.cellWidths[c];
+            const height = this.cellHeights[r];
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.strokeRect(x, y, width, height);
+
+            if (this.selection.isSelected(r, c)) {
+              ctx.fillStyle = 'rgba(0,120,215,0.3)';
+              ctx.fillRect(x, y, width, height);
+            }
+
+            const key = `${r}:${c}`;
+            if (this.cells.has(key)) {
+              ctx.fillStyle = '#000';
+              ctx.font = '14px Arial';
+              ctx.fillText(this.cells.get(key).value, x + 5, y + 16);
+            }
+
+            x += width;
+          }
+          y += this.cellHeights[r];
+        }
+
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, 0, this.canvas.width, this.headerHeight);
+        ctx.fillRect(0, 0, this.headerWidth, this.canvas.height);
+
+        let xx = this.headerWidth;
+        for (let c = this.offsetX; xx < this.canvas.width; c++) {
+          if (c >= this.cols) break;
+          const colName = String.fromCharCode(65 + (c % 26));
+          ctx.fillStyle = '#000';
+          ctx.font = 'bold 13px Arial';
+          ctx.fillText(colName, xx + 5, 16);
+          xx += this.cellWidths[c];
+        }
+
+        let yy = this.headerHeight;
+        for (let r = this.offsetY; yy < this.canvas.height; r++) {
+          if (r >= this.rows) break;
+          ctx.fillStyle = '#000';
+          ctx.font = 'bold 13px Arial';
+          ctx.fillText(`${r + 1}`, 5, yy + 16);
+          yy += this.cellHeights[r];
+        }
+
+        this.updateStats();
+      }
+
+      getCellFromCoords(x, y) {
+        let colX = this.headerWidth;
+        let col = this.offsetX;
+        while (colX < x && col < this.cols) colX += this.cellWidths[col++];
+
+        let rowY = this.headerHeight;
+        let row = this.offsetY;
+        while (rowY < y && row < this.rows) rowY += this.cellHeights[row++];
+
+        return { row: row - 1, col: col - 1 };
+      }
+
+      bindEvents() {
+        this.canvas.addEventListener('mousedown', e => {
+          const { row, col } = this.getCellFromCoords(e.offsetX, e.offsetY);
+          this.selection.start(row, col);
+          this.draw();
+
+          const key = `${row}:${col}`;
+          const value = this.cells.get(key)?.value || '';
+          const x = e.offsetX;
+          const y = e.offsetY;
+          this.editor.style.left = `${x}px`;
+          this.editor.style.top = `${y}px`;
+          this.editor.style.width = `${this.cellWidths[col] - 2}px`;
+          this.editor.style.height = `${this.cellHeights[row] - 2}px`;
+          this.editor.value = value;
+          this.editor.style.display = 'block';
+          this.editor.focus();
+
+          this.editor.onblur = () => {
+            const val = this.editor.value;
+            if (val) this.cells.set(key, new Cell(row, col, val));
+            else this.cells.delete(key);
+            this.editor.style.display = 'none';
+            this.draw();
+          };
+        });
+
+        this.canvas.addEventListener('mousemove', e => {
+          if (e.buttons === 1) {
+            const { row, col } = this.getCellFromCoords(e.offsetX, e.offsetY);
+            this.selection.update(row, col);
+            this.draw();
+          }
+        });
+
+        this.canvas.addEventListener('wheel', e => {
+          this.offsetY += e.deltaY > 0 ? 1 : -1;
+          this.offsetY = Math.max(0, this.offsetY);
+          this.offsetX += e.deltaX > 0 ? 1 : -1;
+          this.offsetX = Math.max(0, this.offsetX);
+          this.draw();
+        });
+      }
+
+      updateStats() {
+        const range = this.selection.getSelectedRange();
+        if (!range) return;
+
+        let values = [];
+        for (let r = range.minRow; r <= range.maxRow; r++) {
+          for (let c = range.minCol; c <= range.maxCol; c++) {
+            const key = `${r}:${c}`;
+            const val = this.cells.get(key)?.value;
+            if (!isNaN(parseFloat(val))) values.push(parseFloat(val));
+          }
+        }
+
+        if (values.length === 0) {
+          this.stats.innerText = '';
+          return;
+        }
+
+        const sum = values.reduce((a, b) => a + b, 0);
+        const avg = sum / values.length;
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        this.stats.innerText = `Count: ${values.length} | Sum: ${sum} | Avg: ${avg.toFixed(2)} | Min: ${min} | Max: ${max}`;
+      }
+
+      loadJson(data) {
+        this.cells.clear();
+        data.forEach((entry, idx) => {
+          this.cells.set(`${idx}:0`, new Cell(idx, 0, entry.id));
+          this.cells.set(`${idx}:1`, new Cell(idx, 1, entry.firstName));
+          this.cells.set(`${idx}:2`, new Cell(idx, 2, entry.lastName));
+          this.cells.set(`${idx}:3`, new Cell(idx, 3, entry.Age));
+          this.cells.set(`${idx}:4`, new Cell(idx, 4, entry.Salary));
+        });
+        this.draw();
+      }
+
+      clearData() {
+        this.cells.clear();
+        this.draw();
+      }
+    }
+
+    const canvas = document.getElementById('gridCanvas');
+    const editor = document.getElementById('editor');
+    const stats = document.getElementById('stats');
+    const grid = new Grid(canvas, editor, stats);
+
+    document.getElementById('uploadJson').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        try {
+          const data = JSON.parse(evt.target.result);
+          grid.loadJson(data);
+        } catch (err) {
+          alert('Invalid JSON');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      grid.clearData();
+    });
+  </script>
+</body>
+</html>

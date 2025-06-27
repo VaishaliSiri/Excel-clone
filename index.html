@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Excel Clone</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    canvas { display: block; border: 1px solid #ccc; }
+    #editor {
+      position: absolute;
+      display: none;
+      border: 1px solid #0078d4;
+      font: 14px Arial;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gridCanvas" width="1200" height="600"></canvas>
+  <input type="text" id="editor" />
+  <script>
+    /**
+     * Represents a single cell in the Excel grid.
+     */
+    class Cell {
+      /**
+       * @param {number} row Row index of the cell
+       * @param {number} col Column index of the cell
+       * @param {string|number} value The value of the cell
+       */
+      constructor(row, col, value = '') {
+        /** @type {number} */ this.row = row;
+        /** @type {number} */ this.col = col;
+        /** @type {string|number} */ this.value = value;
+      }
+    }
+
+    /**
+     * Manages the selection and statistics of selected cells.
+     */
+    class Selection {
+      constructor() {
+        /** @type {number|null} */ this.startRow = null;
+        /** @type {number|null} */ this.startCol = null;
+        /** @type {number|null} */ this.endRow = null;
+        /** @type {number|null} */ this.endCol = null;
+      }
+
+      /**
+       * Sets the selection range
+       * @param {number} row Row index
+       * @param {number} col Column index
+       */
+      start(row, col) {
+        this.startRow = this.endRow = row;
+        this.startCol = this.endCol = col;
+      }
+
+      /**
+       * Updates the selection end range
+       * @param {number} row Row index
+       * @param {number} col Column index
+       */
+      update(row, col) {
+        this.endRow = row;
+        this.endCol = col;
+      }
+
+      /**
+       * Checks if a cell is within the selected range
+       */
+      isSelected(row, col) {
+        if (this.startRow === null || this.endRow === null) return false;
+        const minRow = Math.min(this.startRow, this.endRow);
+        const maxRow = Math.max(this.startRow, this.endRow);
+        const minCol = Math.min(this.startCol, this.endCol);
+        const maxCol = Math.max(this.startCol, this.endCol);
+        return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+      }
+    }
+
+    /**
+     * Represents the main Excel-like grid on canvas.
+     */
+    class Grid {
+      constructor(canvas, editor) {
+        /** @type {HTMLCanvasElement} */ this.canvas = canvas;
+        /** @type {CanvasRenderingContext2D} */ this.ctx = canvas.getContext('2d');
+        /** @type {HTMLInputElement} */ this.editor = editor;
+
+        this.rows = 100000;
+        this.cols = 500;
+        this.cellWidth = 100;
+        this.cellHeight = 24;
+        this.headerHeight = 24;
+        this.headerWidth = 50;
+
+        /** @type {Map<string, Cell>} Sparse data storage */
+        this.cells = new Map();
+        /** @type {Selection} */ this.selection = new Selection();
+
+        this.offsetX = 0;
+        this.offsetY = 0;
+
+        this.bindEvents();
+        this.draw();
+      }
+
+      /**
+       * Draws the full grid (viewport only).
+       */
+      draw() {
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        const rowsInView = Math.floor(this.canvas.height / this.cellHeight);
+        const colsInView = Math.floor(this.canvas.width / this.cellWidth);
+
+        for (let r = 0; r <= rowsInView; r++) {
+          for (let c = 0; c <= colsInView; c++) {
+            const x = c * this.cellWidth + this.headerWidth;
+            const y = r * this.cellHeight + this.headerHeight;
+            const absRow = r + this.offsetY;
+            const absCol = c + this.offsetX;
+
+            ctx.strokeStyle = '#ccc';
+            ctx.strokeRect(x, y, this.cellWidth, this.cellHeight);
+
+            if (this.selection.isSelected(absRow, absCol)) {
+              ctx.fillStyle = 'rgba(0,120,215,0.3)';
+              ctx.fillRect(x, y, this.cellWidth, this.cellHeight);
+            }
+
+            const key = `${absRow}:${absCol}`;
+            if (this.cells.has(key)) {
+              ctx.fillStyle = '#000';
+              ctx.font = '14px Arial';
+              ctx.fillText(this.cells.get(key).value, x + 5, y + 16);
+            }
+          }
+        }
+
+        // Draw headers
+        ctx.fillStyle = '#f3f3f3';
+        ctx.fillRect(0, 0, this.canvas.width, this.headerHeight);
+        ctx.fillRect(0, 0, this.headerWidth, this.canvas.height);
+        for (let c = 0; c <= colsInView; c++) {
+          const colName = String.fromCharCode(65 + ((c + this.offsetX) % 26));
+          ctx.fillStyle = '#000';
+          ctx.fillText(colName, c * this.cellWidth + this.headerWidth + 5, 16);
+        }
+        for (let r = 0; r <= rowsInView; r++) {
+          ctx.fillStyle = '#000';
+          ctx.fillText(`${r + 1 + this.offsetY}`, 5, r * this.cellHeight + this.headerHeight + 16);
+        }
+      }
+
+      /**
+       * Converts mouse coordinates to row and column index.
+       */
+      getCellFromCoords(x, y) {
+        const col = Math.floor((x - this.headerWidth) / this.cellWidth) + this.offsetX;
+        const row = Math.floor((y - this.headerHeight) / this.cellHeight) + this.offsetY;
+        return { row, col };
+      }
+
+      /**
+       * Attaches mouse and keyboard event listeners
+       */
+      bindEvents() {
+        this.canvas.addEventListener('mousedown', e => {
+          const { row, col } = this.getCellFromCoords(e.offsetX, e.offsetY);
+          this.selection.start(row, col);
+          this.draw();
+
+          // Start editing
+          const key = `${row}:${col}`;
+          const value = this.cells.get(key)?.value || '';
+          const x = (col - this.offsetX) * this.cellWidth + this.headerWidth;
+          const y = (row - this.offsetY) * this.cellHeight + this.headerHeight;
+          this.editor.style.left = `${x}px`;
+          this.editor.style.top = `${y}px`;
+          this.editor.style.width = `${this.cellWidth - 2}px`;
+          this.editor.style.height = `${this.cellHeight - 2}px`;
+          this.editor.value = value;
+          this.editor.style.display = 'block';
+          this.editor.focus();
+
+          this.editor.onblur = () => {
+            const val = this.editor.value;
+            if (val) this.cells.set(key, new Cell(row, col, val));
+            else this.cells.delete(key);
+            this.editor.style.display = 'none';
+            this.draw();
+          };
+        });
+
+        this.canvas.addEventListener('mousemove', e => {
+          if (e.buttons === 1) {
+            const { row, col } = this.getCellFromCoords(e.offsetX, e.offsetY);
+            this.selection.update(row, col);
+            this.draw();
+          }
+        });
+
+        this.canvas.addEventListener('wheel', e => {
+          this.offsetY += e.deltaY > 0 ? 1 : -1;
+          this.offsetY = Math.max(0, this.offsetY);
+          this.offsetX += e.deltaX > 0 ? 1 : -1;
+          this.offsetX = Math.max(0, this.offsetX);
+          this.draw();
+        });
+      }
+    }
+
+    const canvas = document.getElementById('gridCanvas');
+    const editor = document.getElementById('editor');
+    const grid = new Grid(canvas, editor);
+
+    // Optional: Load JSON and populate
+    fetch('fake_excel_data.json')
+      .then(res => res.json())
+      .then(data => {
+        data.forEach((entry, idx) => {
+          grid.cells.set(`${idx}:0`, new Cell(idx, 0, entry.id));
+          grid.cells.set(`${idx}:1`, new Cell(idx, 1, entry.firstName));
+          grid.cells.set(`${idx}:2`, new Cell(idx, 2, entry.lastName));
+          grid.cells.set(`${idx}:3`, new Cell(idx, 3, entry.Age));
+          grid.cells.set(`${idx}:4`, new Cell(idx, 4, entry.Salary));
+        });
+        grid.draw();
+      });
+  </script>
+</body>
+</html>

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrollable Grid with Scrollbars</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #grid-container {
+            position: absolute;
+            top: 30px;
+            left: 50px;
+            right: 0;
+            bottom: 0;
+            overflow: auto;
+        }
+        
+        #grid-content {
+            width: 100000px; /* totalCols * cellWidth */
+            height: 3000000px; /* totalRows * cellHeight */
+            position: relative;
+        }
+        
+        #grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: pointer;
+        }
+
+        
+        #column-header {
+            position: fixed;
+            top: 0;
+            left: 50px;
+            right: 0;
+            height: 30px;
+            background: #f0f0f0;
+            border-bottom: 1px solid #999;
+            z-index: 10;
+            overflow: hidden;
+        }
+        
+        #row-header {
+            position: fixed;
+            top: 30px;
+            left: 0;
+            width: 50px;
+            bottom: 0;
+            background: #f0f0f0;
+            border-right: 1px solid #999;
+            z-index: 10;
+            overflow: hidden;
+        }
+        
+        #corner-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 50px;
+            height: 30px;
+            background: #f0f0f0;
+            border-right: 1px solid #999;
+            border-bottom: 1px solid #999;
+            z-index: 20;
+        }
+        
+        .header-canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="corner-header"></div>
+        <div id="column-header">
+            <canvas id="column-canvas" class="header-canvas"></canvas>
+        </div>
+        <div id="row-header">
+            <canvas id="row-canvas" class="header-canvas"></canvas>
+        </div>
+        <div id="grid-container">
+            <div id="grid-content">
+                <canvas id="grid"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const gridCanvas = document.getElementById("grid");
+        const columnCanvas = document.getElementById("column-canvas");
+        const rowCanvas = document.getElementById("row-canvas");
+        const gridContainer = document.getElementById("grid-container");
+        
+        const gridCtx = gridCanvas.getContext("2d");
+        const columnCtx = columnCanvas.getContext("2d");
+        const rowCtx = rowCanvas.getContext("2d");
+
+        const cellWidth = 100;
+        const cellHeight = 30;
+        const headerHeight = 30;
+        const headerWidth = 50;
+
+        const totalCols = 1000;
+        const totalRows = 100000;
+
+        let selectedCell = null;
+        let lastScrollLeft = 0;
+        let lastScrollTop = 0;
+
+        // Set canvas sizes
+        function resizeCanvases() {
+            // Grid canvas - make it large enough for virtual scrolling
+            gridCanvas.width = window.innerWidth;
+            gridCanvas.height = window.innerHeight;
+            
+            // Column header canvas
+            columnCanvas.width = window.innerWidth - headerWidth;
+            columnCanvas.height = headerHeight;
+            
+            // Row header canvas  
+            rowCanvas.width = headerWidth;
+            rowCanvas.height = window.innerHeight - headerHeight;
+            
+            drawAll();
+        }
+
+        // Initial resize
+        resizeCanvases();
+        window.addEventListener('resize', resizeCanvases);
+
+        // Utility: Convert number to Excel column letters
+        function getColumnLetter(n) {
+            let result = "";
+            while (n >= 0) {
+                result = String.fromCharCode((n % 26) + 65) + result;
+                n = Math.floor(n / 26) - 1;
+            }
+            return result;
+        }
+
+        // Draw main grid
+        function drawGrid() {
+            const scrollLeft = gridContainer.scrollLeft;
+            const scrollTop = gridContainer.scrollTop;
+            
+            gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+
+            const visibleCols = Math.ceil(gridCanvas.width / cellWidth) + 2;
+            const visibleRows = Math.ceil(gridCanvas.height / cellHeight) + 2;
+
+            const startCol = Math.floor(scrollLeft / cellWidth);
+            const startRow = Math.floor(scrollTop / cellHeight);
+
+            const offsetX = -(scrollLeft % cellWidth);
+            const offsetY = -(scrollTop % cellHeight);
+
+            // Draw cell backgrounds
+            gridCtx.fillStyle = "white";
+            for (let r = 0; r < visibleRows; r++) {
+                for (let c = 0; c < visibleCols; c++) {
+                    const x = c * cellWidth + offsetX;
+                    const y = r * cellHeight + offsetY;
+                    gridCtx.fillRect(x, y, cellWidth, cellHeight);
+                }
+            }
+
+            // Draw grid lines
+            gridCtx.strokeStyle = "#ddd";
+            gridCtx.lineWidth = 1;
+            
+            // Vertical lines
+            for (let c = 0; c <= visibleCols; c++) {
+                const x = c * cellWidth + offsetX + 0.5;
+                gridCtx.beginPath();
+                gridCtx.moveTo(x, 0);
+                gridCtx.lineTo(x, gridCanvas.height);
+                gridCtx.stroke();
+            }
+
+            // Horizontal lines
+            for (let r = 0; r <= visibleRows; r++) {
+                const y = r * cellHeight + offsetY + 0.5;
+                gridCtx.beginPath();
+                gridCtx.moveTo(0, y);
+                gridCtx.lineTo(gridCanvas.width, y);
+                gridCtx.stroke();
+            }
+
+            // Highlight selected cell
+            // if (selectedCell) {
+            //     const selX = (selectedCell.col - startCol) * cellWidth + offsetX;
+            //     const selY = (selectedCell.row - startRow) * cellHeight + offsetY;
+                
+            //     if (selX >= -cellWidth && selX < gridCanvas.width && 
+            //         selY >= -cellHeight && selY < gridCanvas.height) {
+            //         gridCtx.strokeStyle = "blue";
+            //         gridCtx.lineWidth = 2;
+            //         gridCtx.strokeRect(selX + 1, selY + 1, cellWidth - 2, cellHeight - 2);
+            //     }
+            // }
+
+            if (selectedCell) {
+                const selX = (selectedCell.col - startCol) * cellWidth - (scrollLeft % cellWidth);
+                const selY = (selectedCell.row - startRow) * cellHeight - (scrollTop % cellHeight);
+                
+                if (selX >= -cellWidth && selX < gridCanvas.width && 
+                    selY >= -cellHeight && selY < gridCanvas.height) {
+                    gridCtx.strokeStyle = "blue";
+                    gridCtx.lineWidth = 2;
+                    gridCtx.strokeRect(selX + 1, selY + 1, cellWidth - 2, cellHeight - 2);
+                }
+            }
+        }
+
+        // Draw column headers
+        function drawColumnHeaders() {
+            const scrollLeft = gridContainer.scrollLeft;
+            
+            columnCtx.clearRect(0, 0, columnCanvas.width, columnCanvas.height);
+            columnCtx.fillStyle = "#f0f0f0";
+            columnCtx.fillRect(0, 0, columnCanvas.width, headerHeight);
+
+            const visibleCols = Math.ceil(columnCanvas.width / cellWidth) + 2;
+            const startCol = Math.floor(scrollLeft / cellWidth);
+            const offsetX = -(scrollLeft % cellWidth);
+
+            // Draw column separators
+            columnCtx.strokeStyle = "#999";
+            columnCtx.lineWidth = 1;
+            for (let c = 0; c <= visibleCols; c++) {
+                const x = c * cellWidth + offsetX + 0.5;
+                columnCtx.beginPath();
+                columnCtx.moveTo(x, 0);
+                columnCtx.lineTo(x, headerHeight);
+                columnCtx.stroke();
+            }
+
+            // Draw column labels
+            columnCtx.fillStyle = "black";
+            columnCtx.font = "12px Arial";
+            columnCtx.textAlign = "center";
+            for (let c = 0; c < visibleCols; c++) {
+                const colIndex = startCol + c;
+                if (colIndex >= 0 && colIndex < totalCols) {
+                    const x = c * cellWidth + offsetX + cellWidth / 2;
+                    if (x >= 0 && x < columnCanvas.width) {
+                        columnCtx.fillText(getColumnLetter(colIndex), x, 20);
+                    }
+                }
+            }
+        }
+
+        // Draw row headers
+        function drawRowHeaders() {
+            const scrollTop = gridContainer.scrollTop;
+            
+            rowCtx.clearRect(0, 0, rowCanvas.width, rowCanvas.height);
+            rowCtx.fillStyle = "#f0f0f0";
+            rowCtx.fillRect(0, 0, headerWidth, rowCanvas.height);
+
+            const visibleRows = Math.ceil(rowCanvas.height / cellHeight) + 2;
+            const startRow = Math.floor(scrollTop / cellHeight);
+            const offsetY = -(scrollTop % cellHeight);
+
+            // Draw row separators
+            rowCtx.strokeStyle = "#999";
+            rowCtx.lineWidth = 1;
+            for (let r = 0; r <= visibleRows; r++) {
+                const y = r * cellHeight + offsetY + 0.5;
+                rowCtx.beginPath();
+                rowCtx.moveTo(0, y);
+                rowCtx.lineTo(headerWidth, y);
+                rowCtx.stroke();
+            }
+
+            // Draw row labels
+            rowCtx.fillStyle = "black";
+            rowCtx.font = "12px Arial";
+            rowCtx.textAlign = "center";
+            for (let r = 0; r < visibleRows; r++) {
+                const rowIndex = startRow + r;
+                if (rowIndex >= 0 && rowIndex < totalRows) {
+                    const y = r * cellHeight + offsetY + cellHeight / 2 + 4;
+                    if (y >= 0 && y < rowCanvas.height) {
+                        rowCtx.fillText(rowIndex + 1, headerWidth / 2, y);
+                    }
+                }
+            }
+        }
+
+        function drawAll() {
+            drawGrid();
+            drawColumnHeaders();
+            drawRowHeaders();
+        }
+
+        // Handle scrolling
+        gridContainer.addEventListener('scroll', () => {
+            const scrollLeft = gridContainer.scrollLeft;
+            const scrollTop = gridContainer.scrollTop;
+
+            // Move canvas with scroll to stay on top of visible content
+            gridCanvas.style.transform = `translate(${scrollLeft}px, ${scrollTop}px)`;
+
+            drawAll();
+        });
+
+
+        // Handle cell selection
+        gridCanvas.addEventListener("click", (e) => {
+            const rect = gridCanvas.getBoundingClientRect();
+            const scrollLeft = gridContainer.scrollLeft;
+            const scrollTop = gridContainer.scrollTop;
+            
+            const x = e.clientX - rect.left + scrollLeft;
+            const y = e.clientY - rect.top + scrollTop;
+
+            const col = Math.floor(x / cellWidth);
+            const row = Math.floor(y / cellHeight);
+
+            if (col >= 0 && col < totalCols && row >= 0 && row < totalRows) {
+                selectedCell = { row, col };
+                drawGrid();
+                console.log(`Selected cell: ${getColumnLetter(col)}${row + 1}`);
+            }
+        });
+
+        // Initial draw
+        drawAll();
+    </script>
+</body>
+</html>
