@@ -1,116 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scrollable Grid with Scrollbars</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
-            overflow: hidden;
-        }
-        
-        #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
-        
-        #grid-container {
-            position: absolute;
-            top: 30px;
-            left: 50px;
-            right: 0;
-            bottom: 0;
-            overflow: auto;
-        }
-        
-        #grid-content {
-            width: 100000px; /* totalCols * cellWidth */
-            height: 3000000px; /* totalRows * cellHeight */
-            position: relative;
-        }
-        
-        #grid {
-            position: absolute;
-            top: 0;
-            left: 0;
-            cursor: cell;
-        }
 
-        
-        #column-header {
-            position: fixed;
-            top: 0;
-            left: 50px;
-            right: 0;
-            height: 30px;
-            background: #f0f0f0;
-            border-bottom: 1px solid #999;
-            z-index: 10;
-            overflow: hidden;
-        }
-        
-        #row-header {
-            position: fixed;
-            top: 30px;
-            left: 0;
-            width: 50px;
-            bottom: 0;
-            background: #f0f0f0;
-            border-right: 1px solid #999;
-            z-index: 10;
-            overflow: hidden;
-        }
-        
-        #corner-header {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 50px;
-            height: 30px;
-            background: #f0f0f0;
-            border-right: 1px solid #999;
-            border-bottom: 1px solid #999;
-            z-index: 20;
-        }
-        
-        .header-canvas {
-            display: block;
-        }
-    </style>
-</head>
-<body>
-    <div id="container">
-        <div id="corner-header"></div>
-        <div id="column-header">
-            <canvas id="column-canvas" class="header-canvas"></canvas>
-        </div>
-        <div id="row-header">
-            <canvas id="row-canvas" class="header-canvas"></canvas>
-        </div>
-        <div id="grid-container">
-            <div id="grid-content">
-                <canvas id="grid">
-                </canvas>
-            </div>
-        </div>
-        <input id="text-field" type="text" style="
-    position: absolute;
-    display: none;
-    font-size: 14px;
-    border: 1px solid #4CAF50;
-    outline: none;
-    padding: 4px;
-    z-index: 50;
-    box-sizing: border-box;
-"/>
-
-    </div>
-
-    <script>
         const data = {};
         const gridCanvas = document.getElementById("grid");
         const columnCanvas = document.getElementById("column-canvas");
@@ -185,11 +73,23 @@
             const offsetX = -(scrollLeft % cellWidth);
             const offsetY = -(scrollTop % cellHeight);
 
+            // Calculate the actual range to draw (limited by totalCols and totalRows)
+            const endCol = Math.min(startCol + visibleCols, totalCols);
+            const endRow = Math.min(startRow + visibleRows, totalRows);
+            
+            // Only draw cells that are within our grid limits
+            const actualVisibleCols = endCol - startCol;
+            const actualVisibleRows = endRow - startRow;
+
             // Draw cell backgrounds and selection highlights
-            for (let r = 0; r < visibleRows; r++) {
-                for (let c = 0; c < visibleCols; c++) {
+            for (let r = 0; r < actualVisibleRows; r++) {
+                for (let c = 0; c < actualVisibleCols; c++) {
                     const rowIndex = startRow + r;
                     const colIndex = startCol + c;
+                    
+                    // Skip if outside bounds
+                    if (rowIndex >= totalRows || colIndex >= totalCols) continue;
+                    
                     const x = c * cellWidth + offsetX;
                     const y = r * cellHeight + offsetY;
                     
@@ -219,25 +119,31 @@
                 }
             }
 
-            // Draw grid lines
+            // Draw grid lines (only for cells within limits)
             gridCtx.strokeStyle = "#ddd";
             gridCtx.lineWidth = 0.5;
             
-            // Vertical lines
-            for (let c = 0; c <= visibleCols; c++) {
+            // Vertical lines - only draw up to the actual column limit
+            for (let c = 0; c <= actualVisibleCols; c++) {
+                const colIndex = startCol + c;
+                if (colIndex > totalCols) break;
+                
                 const x = c * cellWidth + offsetX + 0.5;
                 gridCtx.beginPath();
                 gridCtx.moveTo(x, 0);
-                gridCtx.lineTo(x, gridCanvas.height);
+                gridCtx.lineTo(x, Math.min(gridCanvas.height, actualVisibleRows * cellHeight + offsetY));
                 gridCtx.stroke();
             }
 
-            // Horizontal lines
-            for (let r = 0; r <= visibleRows; r++) {
+            // Horizontal lines - only draw up to the actual row limit
+            for (let r = 0; r <= actualVisibleRows; r++) {
+                const rowIndex = startRow + r;
+                if (rowIndex > totalRows) break;
+                
                 const y = r * cellHeight + offsetY + 0.5;
                 gridCtx.beginPath();
                 gridCtx.moveTo(0, y);
-                gridCtx.lineTo(gridCanvas.width, y);
+                gridCtx.lineTo(Math.min(gridCanvas.width, actualVisibleCols * cellWidth + offsetX), y);
                 gridCtx.stroke();
             }
 
@@ -247,18 +153,19 @@
             gridCtx.textAlign = "left";
             gridCtx.textBaseline = "middle";
             
-            for (let r = 0; r < visibleRows; r++) {
-                for (let c = 0; c < visibleCols; c++) {
+            for (let r = 0; r < actualVisibleRows; r++) {
+                for (let c = 0; c < actualVisibleCols; c++) {
                     const rowIndex = startRow + r;
                     const colIndex = startCol + c;
                     
-                    if (rowIndex >= 0 && rowIndex < totalRows && colIndex >= 0 && colIndex < totalCols) {
-                        const cellValue = (data[rowIndex] && data[rowIndex][colIndex]) || "";
-                        if (cellValue) {
-                            const x = c * cellWidth + offsetX + 4;
-                            const y = r * cellHeight + offsetY + cellHeight / 2;
-                            gridCtx.fillText(cellValue, x, y);
-                        }
+                    // Skip if outside bounds
+                    if (rowIndex >= totalRows || colIndex >= totalCols) continue;
+                    
+                    const cellValue = (data[rowIndex] && data[rowIndex][colIndex]) || "";
+                    if (cellValue) {
+                        const x = c * cellWidth + offsetX + 4;
+                        const y = r * cellHeight + offsetY + cellHeight / 2;
+                        gridCtx.fillText(cellValue, x, y);
                     }
                 }
             }
@@ -270,14 +177,16 @@
                 const minCol = Math.min(selectionStart.col, selectionEnd.col);
                 const maxCol = Math.max(selectionStart.col, selectionEnd.col);
 
-                const x = (minCol - startCol) * cellWidth + offsetX + 0.5;
-                const y = (minRow - startRow) * cellHeight + offsetY + 0.5;
-                const width = (maxCol - minCol + 1) * cellWidth - 1;
-                const height = (maxRow - minRow + 1) * cellHeight - 1;
+                
+                    const x = (minCol - startCol) * cellWidth + offsetX + 0.5;
+                    const y = (minRow - startRow) * cellHeight + offsetY + 0.5;
+                    const width = (Math.min(maxCol, totalCols - 1) - minCol + 1) * cellWidth - 1;
+                    const height = (Math.min(maxRow, totalRows - 1) - minRow + 1) * cellHeight - 1;
 
-                gridCtx.strokeStyle = "green";
-                gridCtx.lineWidth = 2;
-                gridCtx.strokeRect(x, y, width, height);
+                    gridCtx.strokeStyle = "green";
+                    gridCtx.lineWidth = 2;
+                    gridCtx.strokeRect(x, y, width, height);
+                
             }
         }
 
@@ -293,10 +202,17 @@
             const startCol = Math.floor(scrollLeft / cellWidth);
             const offsetX = -(scrollLeft % cellWidth);
 
-            // Draw column separators
+            // Calculate actual visible columns within limits
+            const endCol = Math.min(startCol + visibleCols, totalCols);
+            const actualVisibleCols = endCol - startCol;
+
+            // Draw column separators (only for valid columns)
             columnCtx.strokeStyle = "#999";
             columnCtx.lineWidth = 0.5;
-            for (let c = 0; c <= visibleCols; c++) {
+            for (let c = 0; c <= actualVisibleCols; c++) {
+                const colIndex = startCol + c;
+                if (colIndex > totalCols) break;
+                
                 const x = c * cellWidth + offsetX + 0.5;
                 columnCtx.beginPath();
                 columnCtx.moveTo(x, 0);
@@ -304,17 +220,17 @@
                 columnCtx.stroke();
             }
 
-            // Draw column labels
+            // Draw column labels (only for valid columns)
             columnCtx.fillStyle = "black";
             columnCtx.font = "12px Arial";
             columnCtx.textAlign = "center";
-            for (let c = 0; c < visibleCols; c++) {
+            for (let c = 0; c < actualVisibleCols; c++) {
                 const colIndex = startCol + c;
-                if (colIndex >= 0 && colIndex < totalCols) {
-                    const x = c * cellWidth + offsetX + cellWidth / 2;
-                    if (x >= 0 && x < columnCanvas.width) {
-                        columnCtx.fillText(getColumnLetter(colIndex), x, 20);
-                    }
+                if (colIndex >= totalCols) break;
+                
+                const x = c * cellWidth + offsetX + cellWidth / 2;
+                if (x >= 0 && x < columnCanvas.width) {
+                    columnCtx.fillText(getColumnLetter(colIndex), x, 20);
                 }
             }
         }
@@ -331,10 +247,17 @@
             const startRow = Math.floor(scrollTop / cellHeight);
             const offsetY = -(scrollTop % cellHeight);
 
-            // Draw row separators
+            // Calculate actual visible rows within limits
+            const endRow = Math.min(startRow + visibleRows, totalRows);
+            const actualVisibleRows = endRow - startRow;
+
+            // Draw row separators (only for valid rows)
             rowCtx.strokeStyle = "#999";
             rowCtx.lineWidth = 0.5;
-            for (let r = 0; r <= visibleRows; r++) {
+            for (let r = 0; r <= actualVisibleRows; r++) {
+                const rowIndex = startRow + r;
+                if (rowIndex > totalRows) break;
+                
                 const y = r * cellHeight + offsetY + 0.5;
                 rowCtx.beginPath();
                 rowCtx.moveTo(0, y);
@@ -342,17 +265,17 @@
                 rowCtx.stroke();
             }
 
-            // Draw row labels
+            // Draw row labels (only for valid rows)
             rowCtx.fillStyle = "black";
             rowCtx.font = "12px Arial";
             rowCtx.textAlign = "center";
-            for (let r = 0; r < visibleRows; r++) {
+            for (let r = 0; r < actualVisibleRows; r++) {
                 const rowIndex = startRow + r;
-                if (rowIndex >= 0 && rowIndex < totalRows) {
-                    const y = r * cellHeight + offsetY + cellHeight / 2 + 4;
-                    if (y >= 0 && y < rowCanvas.height) {
-                        rowCtx.fillText(rowIndex + 1, headerWidth / 2, y);
-                    }
+                if (rowIndex >= totalRows) break;
+                
+                const y = r * cellHeight + offsetY + cellHeight / 2 + 4;
+                if (y >= 0 && y < rowCanvas.height) {
+                    rowCtx.fillText(rowIndex + 1, headerWidth / 2, y);
                 }
             }
         }
@@ -367,6 +290,19 @@
         gridContainer.addEventListener('scroll', () => {
             const scrollLeft = gridContainer.scrollLeft;
             const scrollTop = gridContainer.scrollTop;
+
+            // Limit scrolling to actual grid boundaries
+            const maxScrollLeft = Math.max(0, (totalCols * cellWidth) - (gridContainer.clientWidth - headerWidth));
+            const maxScrollTop = Math.max(0, (totalRows * cellHeight) - (gridContainer.clientHeight - headerHeight));
+            
+            if (scrollLeft > maxScrollLeft) {
+                gridContainer.scrollLeft = maxScrollLeft;
+                return;
+            }
+            if (scrollTop > maxScrollTop) {
+                gridContainer.scrollTop = maxScrollTop;
+                return;
+            }
 
             // Move canvas with scroll to stay on top of visible content
             gridCanvas.style.transform = `translate(${scrollLeft}px, ${scrollTop}px)`;
@@ -412,7 +348,6 @@
             cellInput.style.height = `${cellHeight - 2}px`;
             cellInput.value = cellValue;
             cellInput.style.display = "block";
-            cellInput.focus();
             cellInput.select();
         }
 
@@ -459,6 +394,7 @@
             const col = Math.floor(x / cellWidth);
             const row = Math.floor(y / cellHeight);
 
+            // Only allow selection within valid grid bounds
             if (col >= 0 && col < totalCols && row >= 0 && row < totalRows) {
                 selectionStart = { row, col };
                 selectionEnd = { row, col };
@@ -492,6 +428,7 @@
             const col = Math.floor(x / cellWidth);
             const row = Math.floor(y / cellHeight);
 
+            // Only allow selection within valid grid bounds
             if (col >= 0 && col < totalCols && row >= 0 && row < totalRows &&
                 (selectionEnd.row !== row || selectionEnd.col !== col)) {
                 selectionEnd = { row, col };
@@ -538,8 +475,71 @@
             }
         });
 
+        // Add keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (editingCell) return; // Don't navigate while editing
+            
+            if (!selectedCell) return;
+            
+            let newRow = selectedCell.row;
+            let newCol = selectedCell.col;
+            
+            switch(e.key) {
+                case 'ArrowUp':
+                    e.preventDefault();
+                    newRow = Math.max(0, selectedCell.row - 1);
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    newRow = Math.min(totalRows - 1, selectedCell.row + 1);
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    newCol = Math.max(0, selectedCell.col - 1);
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    newCol = Math.min(totalCols - 1, selectedCell.col + 1);
+                    break;
+                case 'Enter':
+                case 'F2':
+                    e.preventDefault();
+                    startCellEdit(selectedCell.row, selectedCell.col);
+                    return;
+                default:
+                    return;
+            }
+            
+            // Update selection
+            selectedCell = { row: newRow, col: newCol };
+            selectionStart = { row: newRow, col: newCol };
+            selectionEnd = { row: newRow, col: newCol };
+            
+            // Scroll to make the selected cell visible
+            const cellX = newCol * cellWidth;
+            const cellY = newRow * cellHeight;
+            const containerRect = gridContainer.getBoundingClientRect();
+            const scrollLeft = gridContainer.scrollLeft;
+            const scrollTop = gridContainer.scrollTop;
+            const visibleWidth = containerRect.width;
+            const visibleHeight = containerRect.height;
+            
+            // Check if we need to scroll horizontally
+            if (cellX < scrollLeft) {
+                gridContainer.scrollLeft = cellX;
+            } else if (cellX + cellWidth > scrollLeft + visibleWidth) {
+                gridContainer.scrollLeft = cellX + cellWidth - visibleWidth;
+            }
+            
+            // Check if we need to scroll vertically
+            if (cellY < scrollTop) {
+                gridContainer.scrollTop = cellY;
+            } else if (cellY + cellHeight > scrollTop + visibleHeight) {
+                gridContainer.scrollTop = cellY + cellHeight - visibleHeight;
+            }
+            
+            drawGrid();
+        });
+
         // Initial draw
         drawAll();
-    </script>
-</body>
-</html>

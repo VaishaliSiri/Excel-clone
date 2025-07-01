@@ -1,0 +1,87 @@
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+}
+
+#container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+        
+#grid-container {
+    position: absolute;
+    top: 30px;
+    left: 50px;
+    right: 0;
+    bottom: 0;
+    overflow: auto;
+}
+        
+#grid-content {
+    /* width: 100000px; */
+    width: 50000px; /* totalCols * cellWidth */
+    height: 3000000px; /* totalRows * cellHeight */
+    position: relative;
+}
+        
+#grid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    cursor: cell;
+}
+
+        
+#column-header {
+    position: fixed;
+    top: 0;
+    left: 50px;
+    right: 0;
+    height: 30px;
+    background: #f0f0f0;
+    border-bottom: 1px solid #999;
+    z-index: 10;
+    overflow: hidden;
+}
+        
+#row-header {
+    position: fixed;
+    top: 30px;
+    left: 0;
+    width: 50px;
+    bottom: 0;
+    background: #f0f0f0;
+    border-right: 1px solid #999;
+    z-index: 10;
+    overflow: hidden;
+}
+        
+#corner-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 50px;
+    height: 30px;
+    background: #f0f0f0;
+    border-right: 1px solid #999;
+    border-bottom: 1px solid #999;
+    z-index: 20;
+}
+        
+.header-canvas {
+    display: block;
+}
+
+.input_cell{
+    position: absolute;
+    display: none;
+    font-size: 14px;
+    border: 1px solid #4CAF50;
+    outline: none;
+    padding: 4px;
+    z-index: 50;
+    box-sizing: border-box;
+}        
