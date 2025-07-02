@@ -1,53 +1,113 @@
 // === Dynamic DOM creation ===
+const container = document.createElement("div");
+container.id = "container";
+container.style.position = "relative";
+container.style.width = "100vw";
+container.style.height = "100vh";
+
+// Corner Header
+const cornerHeader = document.createElement("div");
+cornerHeader.id = "corner-header";
+cornerHeader.style.position = "fixed";
+cornerHeader.style.top = "0";
+cornerHeader.style.left = "0";
+cornerHeader.style.width = "50px";
+cornerHeader.style.height = "30px";
+cornerHeader.style.background = "#f0f0f0";
+cornerHeader.style.borderRight = "1px solid #999";
+cornerHeader.style.borderBottom = "1px solid #999";
+cornerHeader.style.zIndex = "20";
+
+// Column Header
+const columnHeader = document.createElement("div");
+columnHeader.id = "column-header";
+columnHeader.style.position = "fixed";
+columnHeader.style.top = "0";
+columnHeader.style.left = "50px";
+columnHeader.style.right = "0";
+columnHeader.style.height = "30px";
+columnHeader.style.background = "#f0f0f0";
+columnHeader.style.borderBottom = "1px solid #999";
+columnHeader.style.zIndex = "10";
+columnHeader.style.overflow = "hidden";
+
+const columnCanvas = document.createElement("canvas");
+columnCanvas.id = "column-canvas";
+columnCanvas.className = "header-canvas";
+columnCanvas.style.display = "block";
+columnHeader.appendChild(columnCanvas);
+
+// Row Header
+const rowHeader = document.createElement("div");
+rowHeader.id = "row-header";
+rowHeader.style.position = "fixed";
+rowHeader.style.top = "30px";
+rowHeader.style.left = "0";
+rowHeader.style.bottom = "0";
+rowHeader.style.width = "50px";
+rowHeader.style.background = "#f0f0f0";
+rowHeader.style.borderRight = "1px solid #999";
+rowHeader.style.zIndex = "10";
+rowHeader.style.overflow = "hidden";
+
+const rowCanvas = document.createElement("canvas");
+rowCanvas.id = "row-canvas";
+rowCanvas.className = "header-canvas";
+rowCanvas.style.display = "block";
+rowHeader.appendChild(rowCanvas);
+
+// Grid container
 const gridContainer = document.createElement("div");
 gridContainer.id = "grid-container";
 gridContainer.style.position = "absolute";
-gridContainer.style.top = "0";
-gridContainer.style.left = "0";
+gridContainer.style.top = "30px";
+gridContainer.style.left = "50px";
 gridContainer.style.right = "0";
 gridContainer.style.bottom = "0";
 gridContainer.style.overflow = "auto";
 gridContainer.style.backgroundColor = "#fff";
 gridContainer.style.zIndex = "0";
 
+// Grid content
+const gridContent = document.createElement("div");
+gridContent.id = "grid-content";
+gridContent.style.position = "relative";
+gridContent.style.width = "50000px"; // totalCols * cellWidth
+gridContent.style.height = "3000000px"; // totalRows * cellHeight
+
+// Grid canvas
 const gridCanvas = document.createElement("canvas");
 gridCanvas.id = "grid";
 gridCanvas.style.position = "absolute";
-gridContainer.style.overflow = "scroll";
-gridCanvas.style.top = "30px";
-gridCanvas.style.left = "50px";
+gridCanvas.style.top = "0px";
+gridCanvas.style.left = "0px";
+gridCanvas.style.cursor = "cell";
+gridContent.appendChild(gridCanvas);
+gridContainer.appendChild(gridContent);
 
-const columnCanvas = document.createElement("canvas");
-columnCanvas.id = "column-canvas";
-columnCanvas.style.position = "absolute";
-columnCanvas.style.top = "0";
-columnCanvas.style.left = "50px";
-
-const rowCanvas = document.createElement("canvas");
-rowCanvas.id = "row-canvas";
-rowCanvas.style.position = "absolute";
-rowCanvas.style.top = "30px";
-rowCanvas.style.left = "0";
-
+// Cell input
 const cellInput = document.createElement("input");
 cellInput.type = "text";
 cellInput.id = "text-field";
+cellInput.className = "input_cell";
 cellInput.style.position = "absolute";
 cellInput.style.display = "none";
-cellInput.style.zIndex = "10";
+cellInput.style.fontSize = "14px";
+cellInput.style.border = "1px solid #4CAF50";
+cellInput.style.outline = "none";
+cellInput.style.padding = "4px";
+cellInput.style.zIndex = "50";
 cellInput.style.boxSizing = "border-box";
-cellInput.style.fontSize = "12px";
-cellInput.style.fontFamily = "Arial, sans-serif";
-cellInput.style.border = "1px solid #999";
-cellInput.style.padding = "2px";
 
+// Append all to container
+container.appendChild(cornerHeader);
+container.appendChild(columnHeader);
+container.appendChild(rowHeader);
+container.appendChild(gridContainer);
+container.appendChild(cellInput);
 
-document.body.appendChild(gridContainer);
-document.body.appendChild(columnCanvas);
-document.body.appendChild(rowCanvas);
-document.body.appendChild(cellInput);
-gridContainer.appendChild(gridCanvas);
-
+// Append container to body
+document.body.appendChild(container);
 
         const data = {};
         
@@ -62,12 +122,6 @@ gridContainer.appendChild(gridCanvas);
 
         const totalCols = 500;
         const totalRows = 100000;
-
-        
-        const scrollSpacer = document.createElement("div");
-        scrollSpacer.style.width = `${cellWidth * totalCols}px`;
-        scrollSpacer.style.height = `${cellHeight * totalRows}px`; // 100k rows
-        gridContainer.appendChild(scrollSpacer);
 
         let selectedCell = null;
         let lastScrollLeft = 0;
