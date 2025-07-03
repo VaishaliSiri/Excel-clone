@@ -1,4 +1,6 @@
 import { Selection } from './Selection.js';
+import { Resizer } from './Resizer.js';
+import { Scrollbar } from './Scrollbar.js';
 
 export class CanvasManager {
   constructor(container) {
@@ -25,6 +27,7 @@ export class CanvasManager {
 
     this.scroller = document.createElement('div');
     this.selection = new Selection(this);
+    this.resizer = new Resizer(this);
 
     this.autoScrollDirection = null;
     this.autoScrollRAF = null;
@@ -32,6 +35,7 @@ export class CanvasManager {
 
     this.initDOM();
     this.attachEvents();
+    this.scrollbar = new Scrollbar(this);
   }
 
   initDOM() {
@@ -44,23 +48,27 @@ export class CanvasManager {
     this.styleCanvas(this.rowHeaderCanvas, 0, this.HEADER_HEIGHT);
     this.styleCanvas(this.mainGridCanvas, this.HEADER_WIDTH, this.HEADER_HEIGHT);
 
-    this.scroller.style.position = 'absolute';
-    this.scroller.style.width = `${this.HEADER_WIDTH + this.totalCols * this.CELL_WIDTH}px`;
-    this.scroller.style.height = `${this.HEADER_HEIGHT + this.totalRows * this.CELL_HEIGHT}px`;
-    this.scroller.style.pointerEvents = 'none';
-
+    // Create invisible scroll wrapper for scroll events
     this.scrollWrapper = document.createElement('div');
     this.scrollWrapper.style.position = 'absolute';
     this.scrollWrapper.style.top = '0';
     this.scrollWrapper.style.left = '0';
-    this.scrollWrapper.style.right = '0';
-    this.scrollWrapper.style.bottom = '0';
-    this.scrollWrapper.style.overflow = 'scroll';
-    this.scrollWrapper.style.zIndex = 3;
+    this.scrollWrapper.style.width = '100%';
+    this.scrollWrapper.style.height = '100%';
+    this.scrollWrapper.style.overflow = 'hidden';
+    this.scrollWrapper.style.zIndex = '1';
+    this.scrollWrapper.style.pointerEvents = 'none';
 
-    this.colHeaderCanvas.style.zIndex = 2;
-    this.rowHeaderCanvas.style.zIndex = 2;
-    this.mainGridCanvas.style.zIndex = 2;
+    // Create large content area for scrolling
+    this.scroller = document.createElement('div');
+    this.scroller.style.position = 'absolute';
+    this.scroller.style.width = `${this.totalCols * this.CELL_WIDTH + this.HEADER_WIDTH}px`;
+    this.scroller.style.height = `${this.totalRows * this.CELL_HEIGHT + this.HEADER_HEIGHT}px`;
+    this.scroller.style.pointerEvents = 'none';
+
+    this.colHeaderCanvas.style.zIndex = '10';
+    this.rowHeaderCanvas.style.zIndex = '10';
+    this.mainGridCanvas.style.zIndex = '5';
 
     this.scrollWrapper.appendChild(this.scroller);
     this.container.appendChild(this.colHeaderCanvas);
@@ -74,24 +82,101 @@ export class CanvasManager {
     canvas.style.left = `${left}px`;
     canvas.style.top = `${top}px`;
     canvas.style.background = '#fff';
+    canvas.style.pointerEvents = 'auto';
   }
 
   attachEvents() {
-    this.scrollWrapper.addEventListener('scroll', () => {
-      this.scrollX = this.scrollWrapper.scrollLeft;
-      this.scrollY = this.scrollWrapper.scrollTop;
-      this.render();
-    });
+    // Custom scroll handling
+    this.scrollWrapper.scrollLeft = 0;
+    this.scrollWrapper.scrollTop = 0;
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
 
-    this.scrollWrapper.addEventListener('pointerdown', this.onPointerDown.bind(this));
-    this.scrollWrapper.addEventListener('pointermove', this.onPointerMove.bind(this));
+    this.mainGridCanvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+    this.mainGridCanvas.addEventListener('pointermove', this.onPointerMove.bind(this));
     document.addEventListener('pointerup', this.onPointerUp.bind(this));
+
+    // Add header click events
+    this.colHeaderCanvas.addEventListener('pointerdown', this.onColHeaderPointerDown.bind(this));
+    this.rowHeaderCanvas.addEventListener('pointerdown', this.onRowHeaderPointerDown.bind(this));
+
+    // Mouse wheel scrolling with proper speed
+    this.container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      
+      // Adjust scroll speed for better user experience
+      const scrollSpeed = 3;
+      const deltaX = e.deltaX * scrollSpeed;
+      const deltaY = e.deltaY * scrollSpeed;
+      
+      const maxScrollX = this.getMaxScrollX();
+      const maxScrollY = this.getMaxScrollY();
+      
+      this.scrollX = Math.max(0, Math.min(maxScrollX, this.scrollX + deltaX));
+      this.scrollY = Math.max(0, Math.min(maxScrollY, this.scrollY + deltaY));
+      
+      this.render();
+      this.scrollbar.updateScrollbars();
+    });
   }
 
-  
+  getMaxScrollX() {
+    return Math.max(0, this.totalCols * this.CELL_WIDTH - (this.viewportWidth - this.HEADER_WIDTH - 17));
+  }
+
+  getMaxScrollY() {
+    return Math.max(0, this.totalRows * this.CELL_HEIGHT - (this.viewportHeight - this.HEADER_HEIGHT - 17));
+  }
+
+  onColHeaderPointerDown(e) {
+    // Check if this is a resize operation first
+    if (this.resizer.isResizeZone(e, 'col')) {
+      return; // Let the resizer handle it
+    }
+
+    const rect = this.colHeaderCanvas.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left + this.scrollX;
+    
+    let xOffset = 0;
+    for (let col = 0; col < this.totalCols; col++) {
+      const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+      
+      if (offsetX >= xOffset && offsetX < xOffset + colWidth) {
+        // Select entire column
+        this.selection.selectColumn(col);
+        this.render();
+        break;
+      }
+      
+      xOffset += colWidth;
+    }
+  }
+
+  onRowHeaderPointerDown(e) {
+    // Check if this is a resize operation first
+    if (this.resizer.isResizeZone(e, 'row')) {
+      return; // Let the resizer handle it
+    }
+
+    const rect = this.rowHeaderCanvas.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top + this.scrollY;
+    
+    let yOffset = 0;
+    for (let row = 0; row < this.totalRows; row++) {
+      const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
+      
+      if (offsetY >= yOffset && offsetY < yOffset + rowHeight) {
+        // Select entire row
+        this.selection.selectRow(row);
+        this.render();
+        break;
+      }
+      
+      yOffset += rowHeight;
+    }
+  }
+
   onPointerDown(e) {
     const { row, col } = this.getCellFromClientCoords(e.clientX, e.clientY);
     if (this.isValidCell(row, col)) {
@@ -122,13 +207,26 @@ export class CanvasManager {
 
   autoScrollIfNeeded(e) {
     const EDGE_SIZE = 20;
-    const scrollSpeed = 30; // px per frame
-    const rect = this.scrollWrapper.getBoundingClientRect();
+    const scrollSpeed = 15; // Reduced for smoother autoscroll
+    const rect = this.mainGridCanvas.getBoundingClientRect();
     let dx = 0, dy = 0;
-    if (e.clientX - rect.left < EDGE_SIZE) dx = -scrollSpeed;
-    else if (rect.right - e.clientX < EDGE_SIZE) dx = scrollSpeed;
-    if (e.clientY - rect.top < EDGE_SIZE) dy = -scrollSpeed;
-    else if (rect.bottom - e.clientY < EDGE_SIZE) dy = scrollSpeed;
+    
+    const maxScrollX = this.getMaxScrollX();
+    const maxScrollY = this.getMaxScrollY();
+    
+    // Check all edges for autoscroll with proper bounds checking
+    if (e.clientX - rect.left < EDGE_SIZE && this.scrollX > 0) {
+      dx = -scrollSpeed;
+    } else if (rect.right - e.clientX < EDGE_SIZE && this.scrollX < maxScrollX) {
+      dx = scrollSpeed;
+    }
+    
+    if (e.clientY - rect.top < EDGE_SIZE && this.scrollY > 0) {
+      dy = -scrollSpeed;
+    } else if (rect.bottom - e.clientY < EDGE_SIZE && this.scrollY < maxScrollY) {
+      dy = scrollSpeed;
+    }
+    
     if (dx !== 0 || dy !== 0) {
       this.autoScrollDirection = { dx, dy };
       if (!this.autoScrollRAF) this.autoScrollStep();
@@ -140,10 +238,18 @@ export class CanvasManager {
   autoScrollStep() {
     if (!this.autoScrollDirection) return;
     const { dx, dy } = this.autoScrollDirection;
-    // Scroll the wrapper
-    this.scrollWrapper.scrollLeft += dx;
-    this.scrollWrapper.scrollTop += dy;
-    // Update selection to follow pointer
+    
+    const maxScrollX = this.getMaxScrollX();
+    const maxScrollY = this.getMaxScrollY();
+    
+    // Apply scroll with proper bounds
+    this.scrollX = Math.max(0, Math.min(maxScrollX, this.scrollX + dx));
+    this.scrollY = Math.max(0, Math.min(maxScrollY, this.scrollY + dy));
+    
+    this.render();
+    this.scrollbar.updateScrollbars();
+    
+    // Update selection if pointer is still active
     if (this.lastPointerEvent) {
       const { row, col } = this.getCellFromClientCoords(this.lastPointerEvent.clientX, this.lastPointerEvent.clientY);
       if (this.isValidCell(row, col)) {
@@ -151,6 +257,7 @@ export class CanvasManager {
         this.render();
       }
     }
+    
     this.autoScrollRAF = requestAnimationFrame(() => this.autoScrollStep());
   }
 
@@ -166,8 +273,8 @@ export class CanvasManager {
     this.viewportWidth = this.container.clientWidth;
     this.viewportHeight = this.container.clientHeight;
 
-    const gridWidth = this.viewportWidth - this.HEADER_WIDTH;
-    const gridHeight = this.viewportHeight - this.HEADER_HEIGHT;
+    const gridWidth = this.viewportWidth - this.HEADER_WIDTH - 17;
+    const gridHeight = this.viewportHeight - this.HEADER_HEIGHT - 17;
 
     this.visibleCols = Math.ceil(gridWidth / this.CELL_WIDTH);
     this.visibleRows = Math.ceil(gridHeight / this.CELL_HEIGHT);
@@ -182,16 +289,32 @@ export class CanvasManager {
     this.mainGridCanvas.height = gridHeight;
 
     this.render();
+    if (this.scrollbar) {
+      this.scrollbar.updateScrollbars();
+    }
   }
 
   getCellFromClientCoords(clientX, clientY) {
     const rect = this.mainGridCanvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    const offsetX = x + this.scrollX;
-    const offsetY = y + this.scrollY;
-    const col = Math.floor(offsetX / this.CELL_WIDTH);
-    const row = Math.floor(offsetY / this.CELL_HEIGHT);
+    const x = clientX - rect.left + this.scrollX;
+    const y = clientY - rect.top + this.scrollY;
+
+    let col = 0, xOffset = 0;
+    while (xOffset < x && col < this.totalCols) {
+      const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+      if (xOffset + colWidth > x) break;
+      xOffset += colWidth;
+      col++;
+    }
+
+    let row = 0, yOffset = 0;
+    while (yOffset < y && row < this.totalRows) {
+      const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
+      if (yOffset + rowHeight > y) break;
+      yOffset += rowHeight;
+      row++;
+    }
+
     return { row, col };
   }
 
@@ -208,52 +331,92 @@ export class CanvasManager {
   drawColumnHeaders() {
     const ctx = this.ctxColHeader;
     ctx.clearRect(0, 0, this.colHeaderCanvas.width, this.colHeaderCanvas.height);
+    
+    // Fill header background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(0, 0, this.colHeaderCanvas.width, this.HEADER_HEIGHT);
+    
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000';
-
-    const startCol = Math.floor(this.scrollX / this.CELL_WIDTH);
-    const endCol = startCol + this.visibleCols + 1;
-
     ctx.strokeStyle = '#ccc';
     ctx.beginPath();
 
-    for (let col = startCol; col < endCol && col < this.totalCols; col++) {
-      const x = (col * this.CELL_WIDTH) - this.scrollX;
-      ctx.fillText(this.getColumnName(col), x + this.CELL_WIDTH / 2, this.HEADER_HEIGHT / 2);
-      ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, this.HEADER_HEIGHT);
+    let xOffset = 0;
+    for (let col = 0; col < this.totalCols && xOffset - this.scrollX < this.mainGridCanvas.width; col++) {
+      const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+      const x = xOffset - this.scrollX;
+
+      if (x + colWidth > 0) {
+        // Highlight selected column header
+        if (this.selection.isColumnSelected(col)) {
+          ctx.fillStyle = 'green';
+          ctx.fillRect(x, 0, colWidth, this.HEADER_HEIGHT);
+          ctx.fillStyle = '#000';
+        }
+
+        // Text
+        ctx.fillText(this.getColumnName(col), x + colWidth / 2, this.HEADER_HEIGHT / 2);
+
+        // Vertical line
+        ctx.moveTo(x + colWidth + 0.5, 0);
+        ctx.lineTo(x + colWidth + 0.5, this.HEADER_HEIGHT);
+      }
+
+      xOffset += colWidth;
     }
 
-    ctx.moveTo(this.colHeaderCanvas.width - 0.5, 0);
-    ctx.lineTo(this.colHeaderCanvas.width - 0.5, this.HEADER_HEIGHT);
+    // Bottom border
+    ctx.moveTo(0, this.HEADER_HEIGHT - 0.5);
+    ctx.lineTo(this.colHeaderCanvas.width, this.HEADER_HEIGHT - 0.5);
+
     ctx.stroke();
   }
 
   drawRowHeaders() {
     const ctx = this.ctxRowHeader;
     ctx.clearRect(0, 0, this.rowHeaderCanvas.width, this.rowHeaderCanvas.height);
+    
+    // Fill header background
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(0, 0, this.HEADER_WIDTH, this.rowHeaderCanvas.height);
+    
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000';
-
-    const startRow = Math.floor(this.scrollY / this.CELL_HEIGHT);
-    const endRow = startRow + this.visibleRows + 1;
-
     ctx.strokeStyle = '#ccc';
     ctx.beginPath();
 
-    for (let row = startRow; row < endRow && row < this.totalRows; row++) {
-      const y = (row * this.CELL_HEIGHT) - this.scrollY;
-      ctx.fillText(row + 1, this.HEADER_WIDTH / 2, y + this.CELL_HEIGHT / 2);
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(this.HEADER_WIDTH, y + 0.5);
+    let yOffset = 0;
+    for (let row = 0; row < this.totalRows && yOffset - this.scrollY < this.mainGridCanvas.height; row++) {
+      const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
+      const y = yOffset - this.scrollY;
+
+      if (y + rowHeight > 0) {
+        // Highlight selected row header
+        if (this.selection.isRowSelected(row)) {
+          ctx.fillStyle = 'rgba(32, 151, 79, 0.5)';
+          ctx.fillRect(0, y, this.HEADER_WIDTH, rowHeight);
+          ctx.fillStyle = '#000';
+        }
+
+        // Text
+        ctx.fillText(row + 1, this.HEADER_WIDTH / 2, y + rowHeight / 2);
+
+        // Horizontal line
+        ctx.moveTo(0, y + rowHeight + 0.5);
+        ctx.lineTo(this.HEADER_WIDTH, y + rowHeight + 0.5);
+      }
+
+      yOffset += rowHeight;
     }
 
-    ctx.moveTo(0, this.rowHeaderCanvas.height - 0.5);
-    ctx.lineTo(this.HEADER_WIDTH, this.rowHeaderCanvas.height - 0.5);
+    // Right border
+    ctx.moveTo(this.HEADER_WIDTH - 0.5, 0);
+    ctx.lineTo(this.HEADER_WIDTH - 0.5, this.rowHeaderCanvas.height);
+
     ctx.stroke();
   }
 
@@ -261,29 +424,33 @@ export class CanvasManager {
     const ctx = this.ctxMainGrid;
     ctx.clearRect(0, 0, this.mainGridCanvas.width, this.mainGridCanvas.height);
 
-    const startCol = Math.floor(this.scrollX / this.CELL_WIDTH);
-    const endCol = startCol + this.visibleCols + 1;
-    const startRow = Math.floor(this.scrollY / this.CELL_HEIGHT);
-    const endRow = startRow + this.visibleRows + 1;
-
     ctx.strokeStyle = '#e0e0e0';
     ctx.beginPath();
 
-    for (let col = startCol; col <= endCol && col < this.totalCols; col++) {
-      const x = (col * this.CELL_WIDTH) - this.scrollX;
-      ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, this.mainGridCanvas.height);
+    let xOffset = 0;
+    for (let col = 0; col < this.totalCols && xOffset - this.scrollX < this.mainGridCanvas.width; col++) {
+      const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+      const x = xOffset - this.scrollX;
+      if (x + colWidth > 0) {
+        ctx.moveTo(x + colWidth + 0.5, 0);
+        ctx.lineTo(x + colWidth + 0.5, this.mainGridCanvas.height);
+      }
+      xOffset += colWidth;
     }
 
-    for (let row = startRow; row <= endRow && row < this.totalRows; row++) {
-      const y = (row * this.CELL_HEIGHT) - this.scrollY;
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(this.mainGridCanvas.width, y + 0.5);
+    let yOffset = 0;
+    for (let row = 0; row < this.totalRows && yOffset - this.scrollY < this.mainGridCanvas.height; row++) {
+      const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
+      const y = yOffset - this.scrollY;
+      if (y + rowHeight > 0) {
+        ctx.moveTo(0, y + rowHeight + 0.5);
+        ctx.lineTo(this.mainGridCanvas.width, y + rowHeight + 0.5);
+      }
+      yOffset += rowHeight;
     }
 
     ctx.stroke();
     this.selection.renderSelection(ctx);
-    
   }
 
   getColumnName(index) {
