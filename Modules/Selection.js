@@ -9,6 +9,7 @@ export class Selection {
     this.selectionType = 'cell'; // 'cell', 'row', 'column'
     this.selectedRow = null;
     this.selectedCol = null;
+    
   }
 
   startSelection(row, col) {
@@ -130,6 +131,9 @@ export class Selection {
     // Fill background for all visible cells in selection
     for (let row = renderMinRow; row <= renderMaxRow; row++) {
       for (let col = renderMinCol; col <= renderMaxCol; col++) {
+
+        if (row === this.startRow && col === this.startCol) continue;
+        
         let x = 0, y = 0;
         let width = this.canvasManager.resizer?.colSizes.get(col) ?? this.canvasManager.CELL_WIDTH;
         let height = this.canvasManager.resizer?.rowSizes.get(row) ?? this.canvasManager.CELL_HEIGHT;
@@ -151,7 +155,7 @@ export class Selection {
         // Only render if cell is visible
         if (x + width > 0 && x < this.canvasManager.mainGridCanvas.width &&
             y + height > 0 && y < this.canvasManager.mainGridCanvas.height) {
-          ctx.fillStyle = 'rgba(232, 242, 236, 0.5)';
+          ctx.fillStyle = 'rgba(76,240,90,0.05)';
           ctx.fillRect(x, y, width, height);
         }
       }
@@ -189,7 +193,7 @@ export class Selection {
         y = yOffset - scrollY;
 
         // Fill background for selected cell
-        ctx.fillStyle = 'rgba(232, 242, 236, 0.5)';
+        ctx.fillStyle = 'rgba(76,240,90,0.05)';
         ctx.fillRect(x, y, width, height);
       }
     }
@@ -242,4 +246,18 @@ export class Selection {
     ctx.lineWidth = 1;
     ctx.strokeRect(selectionX, selectionY, selectionWidth, selectionHeight);
   }
+  isColInSelection(col) {
+  if (!this.hasSelection()) return false;
+  const minCol = Math.min(this.startCol, this.endCol);
+  const maxCol = Math.max(this.startCol, this.endCol);
+  return col >= minCol && col <= maxCol;
+}
+
+isRowInSelection(row) {
+  if (!this.hasSelection()) return false;
+  const minRow = Math.min(this.startRow, this.endRow);
+  const maxRow = Math.max(this.startRow, this.endRow);
+  return row >= minRow && row <= maxRow;
+}
+
 }

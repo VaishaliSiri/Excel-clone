@@ -105,8 +105,8 @@ export class Scrollbar {
 
     this.verticalThumb.addEventListener('mousedown', (e) => {
       this.isDraggingV = true;
-      this.startY = e.clientY;
-      this.startScrollY = this.cm.scrollY;
+      this.dragStartY = e.clientY;
+      this.dragStartScrollY = this.cm.scrollY;
       this.verticalThumb.style.background = '#787878';
       e.preventDefault();
       document.body.style.userSelect = 'none';
@@ -127,8 +127,8 @@ export class Scrollbar {
 
     this.horizontalThumb.addEventListener('mousedown', (e) => {
       this.isDraggingH = true;
-      this.startX = e.clientX;
-      this.startScrollX = this.cm.scrollX;
+      this.dragStartX = e.clientX;
+      this.dragStartScrollX = this.cm.scrollX;
       this.horizontalThumb.style.background = '#787878';
       e.preventDefault();
       document.body.style.userSelect = 'none';
@@ -137,15 +137,15 @@ export class Scrollbar {
     // Global mouse events
     document.addEventListener('mousemove', (e) => {
       if (this.isDraggingV) {
-        const deltaY = e.clientY - this.startY;
+        const deltaY = e.clientY - this.dragStartY;
         const scrollbarHeight = this.verticalScrollbar.clientHeight;
         const thumbHeight = this.verticalThumb.clientHeight;
-        const maxThumbTop = scrollbarHeight - thumbHeight;
+        const trackHeight = scrollbarHeight - thumbHeight;
         const maxScrollY = this.cm.getMaxScrollY();
         
-        if (maxThumbTop > 0) {
-          const scrollRatio = deltaY / maxThumbTop;
-          const newScrollY = Math.max(0, Math.min(maxScrollY, this.startScrollY + scrollRatio * maxScrollY));
+        if (trackHeight > 0 && maxScrollY > 0) {
+          const scrollRatio = deltaY / trackHeight;
+          const newScrollY = Math.max(0, Math.min(maxScrollY, this.dragStartScrollY + scrollRatio * maxScrollY));
           this.cm.scrollY = newScrollY;
           this.cm.render();
           this.updateScrollbars();
@@ -153,15 +153,15 @@ export class Scrollbar {
       }
 
       if (this.isDraggingH) {
-        const deltaX = e.clientX - this.startX;
+        const deltaX = e.clientX - this.dragStartX;
         const scrollbarWidth = this.horizontalScrollbar.clientWidth;
         const thumbWidth = this.horizontalThumb.clientWidth;
-        const maxThumbLeft = scrollbarWidth - thumbWidth;
+        const trackWidth = scrollbarWidth - thumbWidth;
         const maxScrollX = this.cm.getMaxScrollX();
         
-        if (maxThumbLeft > 0) {
-          const scrollRatio = deltaX / maxThumbLeft;
-          const newScrollX = Math.max(0, Math.min(maxScrollX, this.startScrollX + scrollRatio * maxScrollX));
+        if (trackWidth > 0 && maxScrollX > 0) {
+          const scrollRatio = deltaX / trackWidth;
+          const newScrollX = Math.max(0, Math.min(maxScrollX, this.dragStartScrollX + scrollRatio * maxScrollX));
           this.cm.scrollX = newScrollX;
           this.cm.render();
           this.updateScrollbars();
@@ -243,13 +243,33 @@ export class Scrollbar {
     });
   }
 
+  // Calculate total content width considering custom column sizes
+  getTotalContentWidth() {
+    let totalWidth = 0;
+    for (let col = 0; col < this.cm.totalCols; col++) {
+      const colWidth = this.cm.resizer?.colSizes.get(col) ?? this.cm.CELL_WIDTH;
+      totalWidth += colWidth;
+    }
+    return totalWidth;
+  }
+
+  // Calculate total content height considering custom row sizes
+  getTotalContentHeight() {
+    let totalHeight = 0;
+    for (let row = 0; row < this.cm.totalRows; row++) {
+      const rowHeight = this.cm.resizer?.rowSizes.get(row) ?? this.cm.CELL_HEIGHT;
+      totalHeight += rowHeight;
+    }
+    return totalHeight;
+  }
+
   updateScrollbars() {
     // Update vertical scrollbar
     const maxScrollY = this.cm.getMaxScrollY();
     const viewportHeight = this.cm.viewportHeight - this.cm.HEADER_HEIGHT - 17;
-    const contentHeight = this.cm.totalRows * this.cm.CELL_HEIGHT;
+    const contentHeight = this.getTotalContentHeight();
     
-    if (maxScrollY > 0) {
+    if (maxScrollY > 0 && contentHeight > viewportHeight) {
       const thumbHeightRatio = viewportHeight / contentHeight;
       const thumbHeight = Math.max(20, this.verticalScrollbar.clientHeight * thumbHeightRatio);
       const scrollRatio = this.cm.scrollY / maxScrollY;
@@ -265,9 +285,9 @@ export class Scrollbar {
     // Update horizontal scrollbar
     const maxScrollX = this.cm.getMaxScrollX();
     const viewportWidth = this.cm.viewportWidth - this.cm.HEADER_WIDTH - 17;
-    const contentWidth = this.cm.totalCols * this.cm.CELL_WIDTH;
+    const contentWidth = this.getTotalContentWidth();
     
-    if (maxScrollX > 0) {
+    if (maxScrollX > 0 && contentWidth > viewportWidth) {
       const thumbWidthRatio = viewportWidth / contentWidth;
       const thumbWidth = Math.max(20, this.horizontalScrollbar.clientWidth * thumbWidthRatio);
       const scrollRatio = this.cm.scrollX / maxScrollX;
@@ -281,7 +301,8 @@ export class Scrollbar {
     }
 
     // Update corner visibility
-    const showCorner = maxScrollX > 0 && maxScrollY > 0;
+    const showCorner = (maxScrollX > 0 && contentWidth > viewportWidth) && 
+                      (maxScrollY > 0 && contentHeight > viewportHeight);
     this.corner.style.display = showCorner ? 'block' : 'none';
   }
 }

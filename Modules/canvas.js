@@ -10,12 +10,16 @@ export class CanvasManager {
     this.HEADER_WIDTH = 50;
     this.CELL_WIDTH = 100;
     this.CELL_HEIGHT = 30;
+    this.NAVBAR_HEIGHT = 50; // Add navbar height constant
 
     this.totalCols = 500;
     this.totalRows = 100000;
 
     this.scrollX = 0;
     this.scrollY = 0;
+
+    // Initialize cell data storage
+    this.cellData = new Map();
 
     this.colHeaderCanvas = document.createElement('canvas');
     this.rowHeaderCanvas = document.createElement('canvas');
@@ -42,7 +46,8 @@ export class CanvasManager {
     this.container.style.position = 'relative';
     this.container.style.overflow = 'hidden';
     this.container.style.width = '100vw';
-    this.container.style.height = '100vh';
+    this.container.style.height = `calc(100vh - ${this.NAVBAR_HEIGHT}px)`;
+    this.container.style.top = `${this.NAVBAR_HEIGHT}px`;
 
     this.styleCanvas(this.colHeaderCanvas, this.HEADER_WIDTH, 0);
     this.styleCanvas(this.rowHeaderCanvas, 0, this.HEADER_HEIGHT);
@@ -62,8 +67,8 @@ export class CanvasManager {
     // Create large content area for scrolling
     this.scroller = document.createElement('div');
     this.scroller.style.position = 'absolute';
-    this.scroller.style.width = `${this.totalCols * this.CELL_WIDTH + this.HEADER_WIDTH}px`;
-    this.scroller.style.height = `${this.totalRows * this.CELL_HEIGHT + this.HEADER_HEIGHT}px`;
+    this.scroller.style.width = `${this.getTotalContentWidth() + this.HEADER_WIDTH}px`;
+    this.scroller.style.height = `${this.getTotalContentHeight() + this.HEADER_HEIGHT}px`;
     this.scroller.style.pointerEvents = 'none';
 
     this.colHeaderCanvas.style.zIndex = '10';
@@ -75,6 +80,26 @@ export class CanvasManager {
     this.container.appendChild(this.rowHeaderCanvas);
     this.container.appendChild(this.mainGridCanvas);
     this.container.appendChild(this.scrollWrapper);
+  }
+
+  // Calculate total content width considering custom column sizes
+  getTotalContentWidth() {
+    let totalWidth = 0;
+    for (let col = 0; col < this.totalCols; col++) {
+      const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+      totalWidth += colWidth;
+    }
+    return totalWidth;
+  }
+
+  // Calculate total content height considering custom row sizes
+  getTotalContentHeight() {
+    let totalHeight = 0;
+    for (let row = 0; row < this.totalRows; row++) {
+      const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
+      totalHeight += rowHeight;
+    }
+    return totalHeight;
   }
 
   styleCanvas(canvas, left, top) {
@@ -122,11 +147,13 @@ export class CanvasManager {
   }
 
   getMaxScrollX() {
-    return Math.max(0, this.totalCols * this.CELL_WIDTH - (this.viewportWidth - this.HEADER_WIDTH - 17));
+    const contentWidth = this.getTotalContentWidth();
+    return Math.max(0, contentWidth - (this.viewportWidth - this.HEADER_WIDTH - 17));
   }
 
   getMaxScrollY() {
-    return Math.max(0, this.totalRows * this.CELL_HEIGHT - (this.viewportHeight - this.HEADER_HEIGHT - 17));
+    const contentHeight = this.getTotalContentHeight();
+    return Math.max(0, contentHeight - (this.viewportHeight - this.HEADER_HEIGHT - 17));
   }
 
   onColHeaderPointerDown(e) {
@@ -288,6 +315,10 @@ export class CanvasManager {
     this.mainGridCanvas.width = gridWidth;
     this.mainGridCanvas.height = gridHeight;
 
+    // Update scroller size
+    this.scroller.style.width = `${this.getTotalContentWidth() + this.HEADER_WIDTH}px`;
+    this.scroller.style.height = `${this.getTotalContentHeight() + this.HEADER_HEIGHT}px`;
+
     this.render();
     if (this.scrollbar) {
       this.scrollbar.updateScrollbars();
@@ -322,6 +353,20 @@ export class CanvasManager {
     return row >= 0 && row < this.totalRows && col >= 0 && col < this.totalCols;
   }
 
+  getCellData(row, col) {
+    const key = `${row},${col}`;
+    return this.cellData.get(key) || '';
+  }
+
+  setCellData(row, col, value) {
+    const key = `${row},${col}`;
+    if (value === '' || value === null || value === undefined) {
+      this.cellData.delete(key);
+    } else {
+      this.cellData.set(key, String(value));
+    }
+  }
+
   render() {
     this.drawColumnHeaders();
     this.drawRowHeaders();
@@ -329,127 +374,201 @@ export class CanvasManager {
   }
 
   drawColumnHeaders() {
-    const ctx = this.ctxColHeader;
-    ctx.clearRect(0, 0, this.colHeaderCanvas.width, this.colHeaderCanvas.height);
-    
-    // Fill header background
-    ctx.fillStyle = '#f5f5f5';
-    ctx.fillRect(0, 0, this.colHeaderCanvas.width, this.HEADER_HEIGHT);
-    
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#000';
-    ctx.strokeStyle = '#ccc';
-    ctx.beginPath();
+  const ctx = this.ctxColHeader;
+  ctx.clearRect(0, 0, this.colHeaderCanvas.width, this.colHeaderCanvas.height);
 
-    let xOffset = 0;
-    for (let col = 0; col < this.totalCols && xOffset - this.scrollX < this.mainGridCanvas.width; col++) {
-      const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
-      const x = xOffset - this.scrollX;
+  // Fill background
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fillRect(0, 0, this.colHeaderCanvas.width, this.HEADER_HEIGHT);
 
-      if (x + colWidth > 0) {
-        // Highlight selected column header
-        if (this.selection.isColumnSelected(col)) {
-          ctx.fillStyle = 'green';
-          ctx.fillRect(x, 0, colWidth, this.HEADER_HEIGHT);
-          ctx.fillStyle = '#000';
-        }
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = '#ccc';
+  ctx.beginPath();
 
-        // Text
-        ctx.fillText(this.getColumnName(col), x + colWidth / 2, this.HEADER_HEIGHT / 2);
+  let xOffset = 0;
+  for (let col = 0; col < this.totalCols && xOffset - this.scrollX < this.mainGridCanvas.width; col++) {
+    const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+    const x = xOffset - this.scrollX;
 
-        // Vertical line
-        ctx.moveTo(x + colWidth + 0.5, 0);
-        ctx.lineTo(x + colWidth + 0.5, this.HEADER_HEIGHT);
+    if (x + colWidth > 0) {
+      const isFullCol = this.selection.isColumnSelected(col);
+      const isInRange = this.selection.isColInSelection(col);
+
+      // Background color
+      if (isFullCol) {
+        ctx.fillStyle = 'rgba(0,128,0,0.9)'; // dark green
+        ctx.fillRect(x, 0, colWidth, this.HEADER_HEIGHT);
+      } else if (isInRange) {
+        ctx.fillStyle = '#CAEAD8'; // light green
+        ctx.fillRect(x, 0, colWidth, this.HEADER_HEIGHT);
       }
 
-      xOffset += colWidth;
+      // Text color
+      if (isFullCol) {
+        ctx.fillStyle = '#fff'; // white
+      } else if (isInRange) {
+        ctx.fillStyle = '#006400'; // dark green
+      } else {
+        ctx.fillStyle = '#000'; // default
+      }
+
+      ctx.fillText(this.getColumnName(col), x + colWidth / 2, this.HEADER_HEIGHT / 2);
+
+      // Vertical line
+      ctx.moveTo(x + colWidth + 0.5, 0);
+      ctx.lineTo(x + colWidth + 0.5, this.HEADER_HEIGHT);
     }
 
-    // Bottom border
-    ctx.moveTo(0, this.HEADER_HEIGHT - 0.5);
-    ctx.lineTo(this.colHeaderCanvas.width, this.HEADER_HEIGHT - 0.5);
-
-    ctx.stroke();
+    xOffset += colWidth;
   }
+
+  // Bottom border
+  ctx.moveTo(0, this.HEADER_HEIGHT - 0.5);
+  ctx.lineTo(this.colHeaderCanvas.width, this.HEADER_HEIGHT - 0.5);
+
+  ctx.stroke();
+}
+
+
 
   drawRowHeaders() {
-    const ctx = this.ctxRowHeader;
-    ctx.clearRect(0, 0, this.rowHeaderCanvas.width, this.rowHeaderCanvas.height);
-    
-    // Fill header background
-    ctx.fillStyle = '#f5f5f5';
-    ctx.fillRect(0, 0, this.HEADER_WIDTH, this.rowHeaderCanvas.height);
-    
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#000';
-    ctx.strokeStyle = '#ccc';
-    ctx.beginPath();
+  const ctx = this.ctxRowHeader;
+  ctx.clearRect(0, 0, this.rowHeaderCanvas.width, this.rowHeaderCanvas.height);
 
-    let yOffset = 0;
-    for (let row = 0; row < this.totalRows && yOffset - this.scrollY < this.mainGridCanvas.height; row++) {
-      const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
-      const y = yOffset - this.scrollY;
+  // Fill background
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fillRect(0, 0, this.HEADER_WIDTH, this.rowHeaderCanvas.height);
 
-      if (y + rowHeight > 0) {
-        // Highlight selected row header
-        if (this.selection.isRowSelected(row)) {
-          ctx.fillStyle = 'rgba(32, 151, 79, 0.5)';
-          ctx.fillRect(0, y, this.HEADER_WIDTH, rowHeight);
-          ctx.fillStyle = '#000';
-        }
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = '#ccc';
+  ctx.beginPath();
 
-        // Text
-        ctx.fillText(row + 1, this.HEADER_WIDTH / 2, y + rowHeight / 2);
+  let yOffset = 0;
+  for (let row = 0; row < this.totalRows && yOffset - this.scrollY < this.mainGridCanvas.height; row++) {
+    const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
+    const y = yOffset - this.scrollY;
 
-        // Horizontal line
-        ctx.moveTo(0, y + rowHeight + 0.5);
-        ctx.lineTo(this.HEADER_WIDTH, y + rowHeight + 0.5);
+    if (y + rowHeight > 0) {
+      const isFullRow = this.selection.isRowSelected(row);
+      const isInRange = this.selection.isRowInSelection(row);
+
+      // Background color
+      if (isFullRow) {
+        ctx.fillStyle = 'rgba(0,128,0,0.9)';
+        ctx.fillRect(0, y, this.HEADER_WIDTH, rowHeight);
+      } else if (isInRange) {
+        ctx.fillStyle = '#CAEAD8';
+        ctx.fillRect(0, y, this.HEADER_WIDTH, rowHeight);
       }
 
-      yOffset += rowHeight;
+      // Text color
+      if (isFullRow) {
+        ctx.fillStyle = '#fff'; // white
+      } else if (isInRange) {
+        ctx.fillStyle = '#006400'; // dark green
+      } else {
+        ctx.fillStyle = '#000'; // default
+      }
+
+      ctx.fillText(row + 1, this.HEADER_WIDTH / 2, y + rowHeight / 2);
+
+      // Horizontal line
+      ctx.moveTo(0, y + rowHeight + 0.5);
+      ctx.lineTo(this.HEADER_WIDTH, y + rowHeight + 0.5);
     }
 
-    // Right border
-    ctx.moveTo(this.HEADER_WIDTH - 0.5, 0);
-    ctx.lineTo(this.HEADER_WIDTH - 0.5, this.rowHeaderCanvas.height);
-
-    ctx.stroke();
+    yOffset += rowHeight;
   }
+
+  // Right border
+  ctx.moveTo(this.HEADER_WIDTH - 0.5, 0);
+  ctx.lineTo(this.HEADER_WIDTH - 0.5, this.rowHeaderCanvas.height);
+
+  ctx.stroke();
+}
+
 
   drawMainGrid() {
     const ctx = this.ctxMainGrid;
     ctx.clearRect(0, 0, this.mainGridCanvas.width, this.mainGridCanvas.height);
 
+    // First, draw all grid lines
     ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 1;
     ctx.beginPath();
 
+    // Draw vertical lines
     let xOffset = 0;
-    for (let col = 0; col < this.totalCols && xOffset - this.scrollX < this.mainGridCanvas.width; col++) {
-      const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+    for (let col = 0; col <= this.totalCols && xOffset - this.scrollX <= this.mainGridCanvas.width; col++) {
       const x = xOffset - this.scrollX;
-      if (x + colWidth > 0) {
-        ctx.moveTo(x + colWidth + 0.5, 0);
-        ctx.lineTo(x + colWidth + 0.5, this.mainGridCanvas.height);
+      if (x >= 0 && x <= this.mainGridCanvas.width) {
+        ctx.moveTo(x + 0.5, 0);
+        ctx.lineTo(x + 0.5, this.mainGridCanvas.height);
       }
-      xOffset += colWidth;
+      if (col < this.totalCols) {
+        const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+        xOffset += colWidth;
+      }
     }
 
+    // Draw horizontal lines
     let yOffset = 0;
+    for (let row = 0; row <= this.totalRows && yOffset - this.scrollY <= this.mainGridCanvas.height; row++) {
+      const y = yOffset - this.scrollY;
+      if (y >= 0 && y <= this.mainGridCanvas.height) {
+        ctx.moveTo(0, y + 0.5);
+        ctx.lineTo(this.mainGridCanvas.width, y + 0.5);
+      }
+      if (row < this.totalRows) {
+        const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
+        yOffset += rowHeight;
+      }
+    }
+
+    ctx.stroke();
+
+    // Then, draw cell data on top of the grid lines
+    yOffset = 0;
     for (let row = 0; row < this.totalRows && yOffset - this.scrollY < this.mainGridCanvas.height; row++) {
       const rowHeight = this.resizer?.rowSizes.get(row) ?? this.CELL_HEIGHT;
       const y = yOffset - this.scrollY;
+
       if (y + rowHeight > 0) {
-        ctx.moveTo(0, y + rowHeight + 0.5);
-        ctx.lineTo(this.mainGridCanvas.width, y + rowHeight + 0.5);
+        xOffset = 0;
+        for (let col = 0; col < this.totalCols && xOffset - this.scrollX < this.mainGridCanvas.width; col++) {
+          const colWidth = this.resizer?.colSizes.get(col) ?? this.CELL_WIDTH;
+          const x = xOffset - this.scrollX;
+
+          if (x + colWidth > 0) {
+            // Draw cell data
+            const cellData = this.getCellData(row, col);
+            if (cellData) {
+              ctx.save();
+              ctx.font = '12px sans-serif';
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'middle';
+              ctx.fillStyle = '#000';
+              
+              // Clip text to cell bounds with padding
+              ctx.beginPath();
+              ctx.rect(x + 2, y + 1, colWidth - 4, rowHeight - 2);
+              ctx.clip();
+              
+              ctx.fillText(cellData, x + 4, y + rowHeight / 2);
+              ctx.restore();
+            }
+          }
+          xOffset += colWidth;
+        }
       }
       yOffset += rowHeight;
     }
 
-    ctx.stroke();
+    // Finally, render selection on top of everything
     this.selection.renderSelection(ctx);
   }
 
